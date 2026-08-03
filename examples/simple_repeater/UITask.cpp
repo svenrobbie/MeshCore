@@ -1,114 +1,115 @@
 #include "UITask.h"
 #include <Arduino.h>
+#include <target.h>
 #include <helpers/CommonCLI.h>
+#include "MyMesh.h"
+extern MyMesh the_mesh;
 
 #ifndef USER_BTN_PRESSED
 #define USER_BTN_PRESSED LOW
 #endif
 
-#define AUTO_OFF_MILLIS      20000  // 20 seconds
+#define AUTO_OFF_MILLIS      3600000  // 1 hour
 #define BOOT_SCREEN_MILLIS   4000   // 4 seconds
 
-// 'meshcore', 128x13px
-static const uint8_t meshcore_logo [] PROGMEM = {
-    0x3c, 0x01, 0xe3, 0xff, 0xc7, 0xff, 0x8f, 0x03, 0x87, 0xfe, 0x1f, 0xfe, 0x1f, 0xfe, 0x1f, 0xfe, 
-    0x3c, 0x03, 0xe3, 0xff, 0xc7, 0xff, 0x8e, 0x03, 0x8f, 0xfe, 0x3f, 0xfe, 0x1f, 0xff, 0x1f, 0xfe, 
-    0x3e, 0x03, 0xc3, 0xff, 0x8f, 0xff, 0x0e, 0x07, 0x8f, 0xfe, 0x7f, 0xfe, 0x1f, 0xff, 0x1f, 0xfc, 
-    0x3e, 0x07, 0xc7, 0x80, 0x0e, 0x00, 0x0e, 0x07, 0x9e, 0x00, 0x78, 0x0e, 0x3c, 0x0f, 0x1c, 0x00, 
-    0x3e, 0x0f, 0xc7, 0x80, 0x1e, 0x00, 0x0e, 0x07, 0x1e, 0x00, 0x70, 0x0e, 0x38, 0x0f, 0x3c, 0x00, 
-    0x7f, 0x0f, 0xc7, 0xfe, 0x1f, 0xfc, 0x1f, 0xff, 0x1c, 0x00, 0x70, 0x0e, 0x38, 0x0e, 0x3f, 0xf8, 
-    0x7f, 0x1f, 0xc7, 0xfe, 0x0f, 0xff, 0x1f, 0xff, 0x1c, 0x00, 0xf0, 0x0e, 0x38, 0x0e, 0x3f, 0xf8, 
-    0x7f, 0x3f, 0xc7, 0xfe, 0x0f, 0xff, 0x1f, 0xff, 0x1c, 0x00, 0xf0, 0x1e, 0x3f, 0xfe, 0x3f, 0xf0, 
-    0x77, 0x3b, 0x87, 0x00, 0x00, 0x07, 0x1c, 0x0f, 0x3c, 0x00, 0xe0, 0x1c, 0x7f, 0xfc, 0x38, 0x00, 
-    0x77, 0xfb, 0x8f, 0x00, 0x00, 0x07, 0x1c, 0x0f, 0x3c, 0x00, 0xe0, 0x1c, 0x7f, 0xf8, 0x38, 0x00, 
-    0x73, 0xf3, 0x8f, 0xff, 0x0f, 0xff, 0x1c, 0x0e, 0x3f, 0xf8, 0xff, 0xfc, 0x70, 0x78, 0x7f, 0xf8, 
-    0xe3, 0xe3, 0x8f, 0xff, 0x1f, 0xfe, 0x3c, 0x0e, 0x3f, 0xf8, 0xff, 0xfc, 0x70, 0x3c, 0x7f, 0xf8, 
-    0xe3, 0xe3, 0x8f, 0xff, 0x1f, 0xfc, 0x3c, 0x0e, 0x1f, 0xf8, 0xff, 0xf8, 0x70, 0x3c, 0x7f, 0xf8, 
-};
-
 void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* firmware_version) {
-  _prevBtnState = HIGH;
+  _prevBtnState = false;
   _auto_off = millis() + AUTO_OFF_MILLIS;
   _node_prefs = node_prefs;
   _display->turnOn();
 
-  // strip off dash and commit hash by changing dash to null terminator
-  // e.g: v1.2.3-abcdef -> v1.2.3
   char *version = strdup(firmware_version);
   char *dash = strchr(version, '-');
-  if(dash){
-    *dash = 0;
-  }
+  if (dash) *dash = 0;
+  snprintf(_version_info, sizeof(_version_info), "%s (%s)", version, build_date);
+  free(version);
 
-  // v1.2.3 (1 Jan 2025)
-  sprintf(_version_info, "%s (%s)", version, build_date);
+#ifdef PIN_BUZZER
+  buzzer.begin();
+  buzzer.startup();
+#endif
 }
 
 void UITask::renderCurrScreen() {
-  char tmp[80];
-  if (millis() < BOOT_SCREEN_MILLIS) { // boot screen
-    // meshcore logo
-    _display->setColor(DisplayDriver::BLUE);
-    int logoWidth = 128;
-    _display->drawXbm((_display->width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
+  char tmp[16];
+  int w = _display->width();
 
-    // meshcore website
-    const char* website = "https://meshcore.io";
-    _display->setColor(DisplayDriver::LIGHT);
-    _display->setTextSize(1);
-    uint16_t websiteWidth = _display->getTextWidth(website);
-    _display->setCursor((_display->width() - websiteWidth) / 2, 22);
-    _display->print(website);
-
-    // version info
-    _display->setColor(DisplayDriver::LIGHT);
-    _display->setTextSize(1);
-    uint16_t versionWidth = _display->getTextWidth(_version_info);
-    _display->setCursor((_display->width() - versionWidth) / 2, 35);
-    _display->print(_version_info);
-
-    // node type
-    const char* node_type = "< Repeater >";
-    uint16_t typeWidth = _display->getTextWidth(node_type);
-    _display->setCursor((_display->width() - typeWidth) / 2, 48);
-    _display->print(node_type);
-  } else {  // home screen
-    // node name
-    _display->setCursor(0, 0);
-    _display->setTextSize(1);
-    _display->setColor(DisplayDriver::GREEN);
-    _display->print(_node_prefs->node_name);
-
-    // freq / sf
-    _display->setCursor(0, 20);
-    _display->setColor(DisplayDriver::YELLOW);
-    sprintf(tmp, "FREQ: %06.3f SF%d", _node_prefs->freq, _node_prefs->sf);
-    _display->print(tmp);
-
-    // bw / cr
-    _display->setCursor(0, 30);
-    sprintf(tmp, "BW: %03.2f CR: %d", _node_prefs->bw, _node_prefs->cr);
-    _display->print(tmp);
+  if (millis() < BOOT_SCREEN_MILLIS) {
+    _display->drawTextCentered(w / 2, 3, "MeshCore");
+    _display->drawTextCentered(w / 2, 14, "Repeater");
+    _display->drawTextCentered(w / 2, 25, _version_info);
+    return;
   }
+
+  _display->setCursor(0, 0);
+  _display->print(_node_prefs->node_name);
+
+  _display->setCursor(0, 8);
+  snprintf(tmp, sizeof(tmp), "RX:%lu", radio_driver.getPacketsRecv());
+  _display->print(tmp);
+
+  _display->setCursor(0, 16);
+  snprintf(tmp, sizeof(tmp), "TX:%lu", radio_driver.getPacketsSent());
+  _display->print(tmp);
+
+  _display->setCursor(0, 24);
+  snprintf(tmp, sizeof(tmp), "RSSI:%d", (int)radio_driver.getLastRSSI());
+  _display->print(tmp);
+
+  _display->setCursor(0, 32);
+  snprintf(tmp, sizeof(tmp), "SNR:%d", (int)radio_driver.getLastSNR());
+  _display->print(tmp);
+
+  unsigned long air_ms = the_mesh.getTotalAirTime();
+  unsigned long up_ms = millis();
+  float dc = (up_ms > 0) ? 100.0f * (float)air_ms / (float)up_ms : 0.0f;
+  snprintf(tmp, sizeof(tmp), "AirTX:%.1f%%", dc);
+  _display->drawTextCentered(w / 2, 40, tmp);
 }
 
 void UITask::loop() {
-#ifdef PIN_USER_BTN
+#if defined(PIN_USER_BTN)
   if (millis() >= _next_read) {
-    int btnState = digitalRead(PIN_USER_BTN);
-    if (btnState != _prevBtnState) {
-      if (btnState == USER_BTN_PRESSED) {  // pressed?
+    bool btnDown = (digitalRead(PIN_USER_BTN) == USER_BTN_PRESSED);
+    if (btnDown != _prevBtnState) {
+      if (btnDown) {
+#ifdef PIN_BUZZER
+        buzzer.play("btn:d=64,o=6,b=200:c");
+#endif
         if (_display->isOn()) {
-          // TODO: any action ?
+          _display->turnOff();
         } else {
           _display->turnOn();
+          _auto_off = millis() + AUTO_OFF_MILLIS;
         }
-        _auto_off = millis() + AUTO_OFF_MILLIS;   // extend auto-off timer
       }
-      _prevBtnState = btnState;
+      _prevBtnState = btnDown;
     }
-    _next_read = millis() + 200;  // 5 reads per second
+    _next_read = millis() + 200;
   }
+#elif defined(PIN_USER_BTN_READ_FUNC)
+  if (millis() >= _next_read) {
+    bool btnDown = PIN_USER_BTN_READ_FUNC();
+    if (btnDown != _prevBtnState) {
+      if (btnDown) {
+#ifdef PIN_BUZZER
+        buzzer.play("btn:d=64,o=6,b=200:c");
+#endif
+        if (_display->isOn()) {
+          _display->turnOff();
+        } else {
+          _display->turnOn();
+          _auto_off = millis() + AUTO_OFF_MILLIS;
+        }
+      }
+      _prevBtnState = btnDown;
+    }
+    _next_read = millis() + 50;
+  }
+#endif
+
+#ifdef PIN_BUZZER
+  if (buzzer.isPlaying()) buzzer.loop();
 #endif
 
   if (_display->isOn()) {
@@ -123,4 +124,6 @@ void UITask::loop() {
       _display->turnOff();
     }
   }
+
+  board.tx_led_enabled = _display->isOn();
 }

@@ -28,24 +28,11 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 **Usage:** 
 - `reboot`
 
-**Note:** No reply is sent.
-
----
-
-### Power-off the node
-**Usage:**
-- `poweroff`, or
-- `shutdown`
-
-**Note:** No reply is sent.
-
 ---
 
 ### Reset the clock and reboot
 **Usage:**
 - `clkreboot`
-
-**Note:** No reply is sent.
 
 ---
 
@@ -273,6 +260,20 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 **Default:** `on`
 
 **Temporary Note:** If you upgraded from an older version to 1.14.1 without erasing flash, this setting is `off` because of [#2118](https://github.com/meshcore-dev/MeshCore/issues/2118)
+
+---
+
+#### View or change the LoRa FEM receive-path gain state on supported boards
+**Usage:**
+- `get radio.fem.rxgain`
+- `set radio.fem.rxgain <state>`
+
+**Parameters:**
+- `state`: `on`|`off`
+
+**Notes:**
+- This controls the external LoRa FEM receive-path LNA where the board supports it.
+- This is separate from `radio.rxgain`, which controls the radio chip receive gain mode.
 
 ---
 
@@ -577,6 +578,20 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 
 ---
 
+#### Enable or disable hardware Channel Activity Detection (CAD)
+**Usage:**
+- `get cad`
+- `set cad <on|off>`
+
+**Description:** When enabled, the radio performs a hardware Channel Activity Detection scan before transmitting and defers if the channel is busy. Runs independently of `int.thresh` — either, both, or none may be active.
+
+**Parameters:**
+- `on|off`: Enable or disable hardware CAD
+
+**Default:** `off`
+
+---
+
 #### View or change the AGC Reset Interval
 **Usage:**
 - `get agc.reset.interval`
@@ -645,21 +660,10 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 **Parameters:**
 - `value`: Maximum flood hop count (0-64) for a packet without a scope (no region set)
 
-**Default:** `64` - (`0xFF` indicates it hasn't been set, will track flood.max until it is.)
+**Default:** `0xFF` - indicates it hasn't been set, will track flood.max until it is.
 
 **Note:** An alternative to `region denyf *`, setting `flood.max.unscoped` to a lower value such as `3` would allow for local unscoped messages to propagate, while preventing noisy neighbors from flooding a local region.
 
----
-
-#### Limit the number of hops for an advert flood message
-**Usage:**
-- `get flood.max.advert`
-- `set flood.max.advert <value>`
-
-**Parameters:**
-- `value`: Maximum flood hop count (0-64) for an advert packet
-
-**Default:** `8`
 
 ---
 

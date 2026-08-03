@@ -3,12 +3,19 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <helpers/CommonCLI.h>
 
+#ifdef PIN_BUZZER
+  #include <helpers/ui/buzzer.h>
+#endif
+
 class UITask {
   DisplayDriver* _display;
   unsigned long _next_read, _next_refresh, _auto_off;
   int _prevBtnState;
   NodePrefs* _node_prefs;
   char _version_info[32];
+#ifdef PIN_BUZZER
+  genericBuzzer buzzer;
+#endif
 
   void renderCurrScreen();
 public:
