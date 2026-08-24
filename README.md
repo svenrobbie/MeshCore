@@ -1,3 +1,16 @@
+## ℹ️ About This Fork
+
+This is a personal fork of [MeshCore](https://github.com/meshcore-dev/MeshCore) that adds
+new features and bug fixes for the MeshCore devices I like. So far I've only done this for
+the **M5Stack Unit C6L**, which gets:
+
+* A custom repeater UI: RX/TX/RSSI/SNR stats plus measured TX airtime (`AirTX%`),
+  screen on/off via the power button, buzzer feedback, and a TX LED that only flashes
+  while the screen is on
+* A custom companion UI: multi-page layout (system / stats / info) switched by long-press,
+  short-press toggles the screen, with its own buzzer tones
+* A new SSD1306 SPI display driver that safely shares the SPI bus with the LoRa radio
+
 ## About MeshCore
 
 MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
