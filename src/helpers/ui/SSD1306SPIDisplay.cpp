@@ -1,5 +1,16 @@
 #include "SSD1306SPIDisplay.h"
 
+// UIColor definitions (monochrome panel: any non-black color renders as WHITE)
+ColorVal UIColor::window_bkg = SSD1306_BLACK;
+ColorVal UIColor::title_bkg = SSD1306_BLACK;
+ColorVal UIColor::title_txt = SSD1306_WHITE;
+ColorVal UIColor::primary_txt = SSD1306_WHITE;
+ColorVal UIColor::secondary_txt = SSD1306_WHITE;
+ColorVal UIColor::warning_txt = SSD1306_WHITE;
+ColorVal UIColor::popup_bkg = SSD1306_BLACK;
+ColorVal UIColor::popup_txt = SSD1306_WHITE;
+ColorVal UIColor::corp_blue = SSD1306_WHITE;
+
 // Check if SPI is ready (set by radio_init in target.cpp)
 #if defined(P_LORA_SCLK)
   extern bool spi_initialized;
@@ -67,7 +78,7 @@ void SSD1306SPIDisplay::clear() {
   display.display();
 }
 
-void SSD1306SPIDisplay::startFrame(Color bkg) {
+void SSD1306SPIDisplay::startFrame(ColorVal bkg) {
   if (!lazyInit()) return;
   display.clearDisplay();  // TODO: apply 'bkg'
   _color = SSD1306_WHITE;
@@ -82,7 +93,7 @@ void SSD1306SPIDisplay::setTextSize(int sz) {
   display.setTextSize(sz);
 }
 
-void SSD1306SPIDisplay::setColor(Color c) {
+void SSD1306SPIDisplay::setColor(ColorVal c) {
   _color = (c != 0) ? SSD1306_WHITE : SSD1306_BLACK;
   display.setTextColor(_color);
 }

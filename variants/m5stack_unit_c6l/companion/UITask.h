@@ -12,7 +12,7 @@
 
 class UITask : public AbstractUITask {
 public:
-  UITask(mesh::MainBoard* board, BaseSerialInterface* serial)
+  UITask(mesh::MainBoard* board, MultiSerialInterface* serial)
     : AbstractUITask(board, serial), _display(NULL),
       _status_timeout(0), _was_connected(false),
       _last_button_state(false), _cur_page(0), _btn_down_time(0),

@@ -15,6 +15,7 @@ extern MyMesh the_mesh;
 void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* firmware_version) {
   _prevBtnState = false;
   _auto_off = millis() + AUTO_OFF_MILLIS;
+  _started_at = millis();
   _node_prefs = node_prefs;
   _display->turnOn();
 
@@ -34,7 +35,7 @@ void UITask::renderCurrScreen() {
   char tmp[16];
   int w = _display->width();
 
-  if (millis() < BOOT_SCREEN_MILLIS) {
+  if (millis() < _started_at + BOOT_SCREEN_MILLIS) {
     _display->drawTextCentered(w / 2, 3, "MeshCore");
     _display->drawTextCentered(w / 2, 14, "Repeater");
     _display->drawTextCentered(w / 2, 25, _version_info);
