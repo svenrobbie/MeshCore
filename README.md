@@ -7,8 +7,8 @@ the **M5Stack Unit C6L**, which gets:
 * A custom repeater UI: RX/TX/RSSI/SNR stats plus measured TX airtime (`AirTX%`),
   screen on/off via the power button, buzzer feedback, and a TX LED that only flashes
   while the screen is on
-* A custom companion UI: multi-page layout (system / stats / info) switched by long-press,
-  short-press toggles the screen, with its own buzzer tones
+* A custom companion UI: multi-page layout (system / stats / info) switched by short-press,
+  long-press toggles the screen, with its own buzzer tones
 * A new SSD1306 SPI display driver that safely shares the SPI bus with the LoRa radio
 
 ## About MeshCore

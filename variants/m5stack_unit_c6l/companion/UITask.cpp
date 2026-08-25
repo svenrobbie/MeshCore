@@ -206,27 +206,29 @@ void UITask::loop() {
   }
   if (btn && _last_button_state) {
     if (!_long_handled && millis() - _btn_down_time >= 1000) {
-      _cur_page = (_cur_page + 1) % PAGE_COUNT;
-      _need_refresh = true;
-      _auto_off = millis() + AUTO_OFF_MILLIS;
+      // long press: toggle screen
       _long_handled = true;
-#ifdef PIN_BUZZER
-      buzzer.play("page:d=8,o=6,b=200:e,g");
-#endif
-    }
-  }
-  if (!btn && _last_button_state) {
-    if (!_long_handled) {
       if (_display->isOn()) {
         _display->turnOff();
       } else {
         _display->turnOn();
         _cur_page = 0;
         _need_refresh = true;
-        _auto_off = millis() + AUTO_OFF_MILLIS;
       }
+      _auto_off = millis() + AUTO_OFF_MILLIS;
 #ifdef PIN_BUZZER
       buzzer.play("btn:d=64,o=6,b=200:c");
+#endif
+    }
+  }
+  if (!btn && _last_button_state) {
+    if (!_long_handled && _display->isOn()) {
+      // short press: next page (screen must be on)
+      _cur_page = (_cur_page + 1) % PAGE_COUNT;
+      _need_refresh = true;
+      _auto_off = millis() + AUTO_OFF_MILLIS;
+#ifdef PIN_BUZZER
+      buzzer.play("page:d=8,o=6,b=200:e,g");
 #endif
     }
   }
