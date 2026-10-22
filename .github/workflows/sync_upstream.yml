@@ -1,0 +1,60 @@
+
+name: Sync MeshCore Upstream
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: meshcore-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/meshcore-dev/MeshCore.git
+          git fetch upstream main
+
+      - name: Update sync branch
+        run: |
+          git checkout -B upstream-sync upstream/main
+          git push --force origin upstream-sync
+
+      - name: Create or update pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_OWNER: ${{ github.repository_owner }}
+        run: |
+          PR=$(gh pr list \
+            --repo "$GH_REPO" \
+            --base main \
+            --head "$GH_OWNER:upstream-sync" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -z "$PR" ]; then
+            gh pr create \
+              --repo "$GH_REPO" \
+              --base main \
+              --head upstream-sync \
+              --title "Sync MeshCore upstream updates" \
+              --body "Automated update from meshcore-dev/MeshCore. Review changes before merging."
+          else
+            echo "Existing PR #$PR will include the updated upstream changes."
+          fi
