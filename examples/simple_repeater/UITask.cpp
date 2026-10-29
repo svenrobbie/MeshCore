@@ -127,4 +127,15 @@ void UITask::loop() {
   }
 
   board.tx_led_enabled = _display->isOn();
+
+  if (_powering_off_at > 0) { // power off timer armed
+#if defined(LED_PIN) && defined(LED_STATE_ON)
+    digitalWrite(LED_PIN, LED_STATE_ON); // switch on the led until poweroff
+    delay(1000);
+    digitalWrite(LED_PIN, !LED_STATE_ON); // off LED
+#endif
+    if (millis() > _powering_off_at) {
+      _board->powerOff();  // should not return
+    }
+  }
 }
