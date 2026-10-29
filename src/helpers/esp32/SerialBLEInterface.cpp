@@ -56,8 +56,8 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
 // -------- BLESecurityCallbacks methods
 
 uint32_t SerialBLEInterface::onPassKeyRequest() {
-  BLE_DEBUG_PRINTLN("onPassKeyRequest()");
-  return _pin_code;
+  BLE_DEBUG_PRINTLN("onPassKeyRequest() - NO PIN");
+  return 0;  // geen PIN / open BLE
 }
 
 void SerialBLEInterface::onPassKeyNotify(uint32_t pass_key) {
