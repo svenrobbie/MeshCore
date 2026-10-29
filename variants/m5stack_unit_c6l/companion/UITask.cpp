@@ -48,13 +48,13 @@ void UITask::notify(UIEventType t) {
 #endif
 }
 
-void UITask::onQueueSizeChanged(int offline_queue_size) {
-  _msgcount = offline_queue_size;
+void UITask::onQueueSizeChanged(int msgcount) {
+  _msgcount = msgcount;
   _need_refresh = true;
 }
 
 void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t txt_type, uint32_t sender_timestamp, const char* text) {
-  // we only want to show text messages on display, not cli data
+  // Only text messages are shown on the display, not CLI data.
   if (!(txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) return;
   _msgcount = 1;
   _need_refresh = true;
@@ -62,7 +62,6 @@ void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t t
 }
 
 void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_details, const char* text) {
-  // channel messages are text messages too, so just flag a refresh
   _msgcount = 1;
   _need_refresh = true;
 }
