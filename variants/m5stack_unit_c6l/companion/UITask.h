@@ -21,8 +21,9 @@ public:
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
   void loop() override;
   void notify(UIEventType t) override;
-  void msgRead(int msgcount) override { _msgcount = msgcount; _need_refresh = true; }
-  void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) override;
+  void onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t txt_type, uint32_t sender_timestamp, const char* text) override;
+  void onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_details, const char* text) override;
+  void onQueueSizeChanged(int offline_queue_size) override;
   void renderPageSystem();
   void renderPageStats();
   void renderPageInfo();

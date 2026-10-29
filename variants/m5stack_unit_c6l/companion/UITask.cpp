@@ -48,10 +48,23 @@ void UITask::notify(UIEventType t) {
 #endif
 }
 
-void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) {
-  _msgcount = msgcount;
+void UITask::onQueueSizeChanged(int offline_queue_size) {
+  _msgcount = offline_queue_size;
+  _need_refresh = true;
+}
+
+void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t txt_type, uint32_t sender_timestamp, const char* text) {
+  // we only want to show text messages on display, not cli data
+  if (!(txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) return;
+  _msgcount = 1;
   _need_refresh = true;
   _status_timeout = millis() + 10000;
+}
+
+void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_details, const char* text) {
+  // channel messages are text messages too, so just flag a refresh
+  _msgcount = 1;
+  _need_refresh = true;
 }
 
 void UITask::renderScreen() {
@@ -82,7 +95,7 @@ void UITask::renderPageSystem() {
 
 #ifdef BLE_PIN_CODE
   uint32_t pin = the_mesh.getBLEPin();
-  if (_connected) {
+  if (hasConnection()) {
     if (millis() < _status_timeout) {
       _display->drawTextCentered(w / 2, 0, "Connected");
     } else {
@@ -234,11 +247,11 @@ void UITask::loop() {
   }
   _last_button_state = btn;
 
-  if (_connected != _was_connected) {
-    if (_connected) {
+  if (hasConnection() != _was_connected) {
+    if (hasConnection()) {
       _status_timeout = millis() + 10000;
     }
-    _was_connected = _connected;
+    _was_connected = hasConnection();
   }
 
 #ifdef PIN_BUZZER
