@@ -33,6 +33,8 @@ class Mesh : public Dispatcher {
   void routeDirectRecvAcks(Packet* packet, uint32_t delay_millis);
   //void routeRecvAcks(Packet* packet, uint32_t delay_millis);
   DispatcherAction forwardMultipartDirect(Packet* pkt, uint32_t delay_millis);
+  void sendDirectInternal(Packet* packet, const uint8_t* path, uint8_t path_len, uint8_t route_type,
+                          const uint16_t* transport_codes, uint32_t delay_millis);
 
 protected:
   DispatcherAction onRecvPacket(Packet* pkt) override;
@@ -184,6 +186,7 @@ public:
 
   Packet* createAdvert(const LocalIdentity& id, const uint8_t* app_data=NULL, size_t app_data_len=0);
   Packet* createDatagram(uint8_t type, const Identity& dest, const uint8_t* secret, const uint8_t* data, size_t len);
+  Packet* createDatagram(uint8_t type, const Identity& dest, const Identity& src, const uint8_t* secret, const uint8_t* data, size_t len);
   Packet* createAnonDatagram(uint8_t type, const LocalIdentity& sender, const Identity& dest, const uint8_t* secret, const uint8_t* data, size_t data_len);
   Packet* createGroupDatagram(uint8_t type, const GroupChannel& channel, const uint8_t* data, size_t data_len);
   Packet* createAck(const uint8_t* ack, uint8_t len);
@@ -207,10 +210,23 @@ public:
   */
   void sendFlood(Packet* packet, uint16_t* transport_codes, uint32_t delay_millis=0, uint8_t path_hash_size=1);
 
+  /** Send a Flood packet with a pre-seeded path prefix. Flood routers append
+   * their own hashes after the supplied entries. */
+  void sendFloodWithPath(Packet* packet, const uint8_t* initial_path, uint8_t initial_hop_count,
+                         uint32_t delay_millis, uint8_t path_hash_size);
+  void sendFloodWithPath(Packet* packet, const uint8_t* initial_path, uint8_t initial_hop_count,
+                         uint16_t* transport_codes, uint32_t delay_millis, uint8_t path_hash_size);
+
   /**
    * \brief  send a locally-generated Packet with Direct routing
   */
   void sendDirect(Packet* packet, const uint8_t* path, uint8_t path_len, uint32_t delay_millis=0);
+
+  /**
+   * \brief  send a locally-generated Packet with Direct routing and transport codes
+  */
+  void sendDirect(Packet* packet, const uint8_t* path, uint8_t path_len, uint16_t* transport_codes,
+                  uint32_t delay_millis=0);
 
   /**
    * \brief  send a locally-generated Packet to just neighbor nodes (zero hops)

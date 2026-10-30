@@ -4,7 +4,12 @@
 #include <Mesh.h>
 
 /*------------ Frame Protocol --------------*/
-#define FIRMWARE_VER_CODE 14
+#define FIRMWARE_VER_CODE 16
+
+// Test mode (random sender/receiver, app-supplied path and region) is opt-in per build.
+#ifndef ENABLE_TEST_MODE
+#define ENABLE_TEST_MODE 0
+#endif
 
 #ifndef FIRMWARE_BUILD_DATE
 #define FIRMWARE_BUILD_DATE "15 Oct 2026"
@@ -235,6 +240,12 @@ private:
   void checkSerialInterface();
   bool isValidClientRepeatFreq(uint32_t f) const;
 
+#if ENABLE_TEST_MODE
+  int sendTestText(uint32_t timestamp, const char* text, uint32_t& est_timeout);
+  int sendTestGroupText(uint32_t timestamp, const mesh::GroupChannel& channel,
+                        const char* sender_name, const char* text, uint32_t& est_timeout);
+#endif
+
   // helpers, short-cuts
   void saveChannels() { _store->saveChannels(this); }
   void saveContacts();
@@ -263,6 +274,15 @@ private:
   unsigned long dirty_contacts_expiry;
 
   TransportKey send_scope;
+
+#if ENABLE_TEST_MODE
+  // Test mode state. RAM-only: always reset to defaults on boot.
+  bool test_mode_enabled;
+  uint8_t test_hash_size;
+  uint8_t test_path_byte_len;
+  uint8_t test_path[MAX_PATH_SIZE];
+  uint8_t test_region_key[16];
+#endif
 
   uint8_t cmd_frame[MAX_FRAME_SIZE + 1];
   uint8_t out_frame[MAX_FRAME_SIZE + 1];

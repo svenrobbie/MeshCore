@@ -452,6 +452,102 @@ Byte 0: 0x14
 
 ---
 
+### 9. Test Mode (C6L companion builds only)
+
+**Availability**: Compiled only when `ENABLE_TEST_MODE=1`. Enabled in the C6L USB and WiFi companion builds and the dedicated `m5stack_unit_c6l_companion_radio_ble_test` environment; the regular BLE build omits it. Direct test sends need firmware code 15+, and group sends need code 16+. Repeater, room server and KISS builds do not include test mode.
+
+**Purpose**: Send synthetic text packets for testing how other nodes validate and forward traffic. Direct test packets use fresh random sender and receiver keypairs. Group test packets use the selected channel key and a fresh random sender display name; group payloads do not contain a sender public key. These packets are TX-only: no ACK is expected, and no real node can decrypt direct test packets.
+
+**State is RAM-only**: the configuration below starts disabled after every reboot and is never written to `NodePrefs`. Test mode is separate from normal app messages, which are unaffected.
+
+#### Test configuration
+
+`CMD_TEST_SET_CONFIG` (`0x43` / 67):
+
+```
+Byte 0:      0x43
+Byte 1:      enabled        0 = off, 1 = on
+Byte 2:      hash_size      bytes per path hop: 1, 2 or 3
+Byte 3:      path_byte_len  0..64 (synthetic flood-path prefix length)
+Bytes 4-19:  region_key     16 bytes, all zero = unscoped
+Bytes 20+:   path bytes     path_byte_len bytes
+```
+
+Validation:
+
+- `enabled` must be `0` or `1`.
+- `hash_size` must be `1`, `2` or `3`.
+- `path_byte_len` must be `<= 64`, divisible by `hash_size`, and the resulting hop count must be `<= 62` so flood routers have room to append their own hashes.
+- Invalid values return `PACKET_ERROR` with `ERR_CODE_ILLEGAL_ARG`.
+
+**Response**: `PACKET_OK` on success.
+
+`CMD_TEST_GET_CONFIG` (`0x44` / 68):
+
+```
+Byte 0: 0x44
+```
+
+**Response**: `PACKET_TEST_CONFIG` (`0x1E` / 30):
+
+```
+Byte 0:      0x1E
+Byte 1:      enabled
+Byte 2:      hash_size
+Byte 3:      path_byte_len
+Bytes 4-19:  region_key
+Bytes 20+:   path bytes
+```
+
+#### Sending a test packet
+
+`CMD_TEST_SEND_TXT` (`0x45` / 69):
+
+```
+Byte 0:      0x45
+Bytes 1-4:   timestamp (uint32 little-endian)
+Bytes 5+:    UTF-8 text
+```
+
+**Response**: `PACKET_MSG_SENT` (`0x06`), the same frame used for normal sends:
+
+```
+Byte 0:  0x06
+Byte 1:  1 = sent as flood, 0 = sent as direct
+Bytes 2-5: expected ACK (always 0)
+Bytes 6-9: estimated timeout in milliseconds
+```
+
+Errors:
+
+- Test mode disabled → `PACKET_ERROR` with `ERR_CODE_BAD_STATE`.
+- Text longer than `MAX_TEXT_LEN` (160 bytes) → `PACKET_ERROR` with `ERR_CODE_ILLEGAL_ARG`.
+
+`CMD_TEST_SEND_GROUP_TXT` (`0x46` / 70, firmware code 16+):
+
+```
+Byte 0:      0x46
+Byte 1:      channel index
+Bytes 2-5:   timestamp (uint32 little-endian)
+Byte 6:      sender-name length (1..31 bytes)
+Bytes 7+:   sender name UTF-8, followed by message UTF-8
+```
+
+The firmware formats group payload text as `<sender name>: <message>` and encrypts it with the selected channel key. The sender name plus `: ` and message must fit in `MAX_TEXT_LEN` (160 bytes). The reply is the same 10-byte `PACKET_MSG_SENT` frame described above, with ACK hash 0.
+
+#### Routing and scoping
+
+| `path_byte_len` | `region_key` | Result |
+|---|---|---|
+| any | all zero | Unscoped flood, seeded with the supplied path prefix |
+| any | non-zero | Transport-scoped flood, seeded with the supplied path prefix |
+
+- Test packets always use flood routing. Path bytes seed the mutable flood path exactly as supplied, and forwarding routers append their own hash after the prefix. Arbitrary/fake bytes are useful for testing validation and drop behaviour; they do not select direct routing.
+- `hash_size` selects how many bytes make up each hop, encoded in the packet as `path_len = ((hash_size - 1) << 6) | hop_count`, where `hop_count = path_byte_len / hash_size`.
+- A non-zero `region_key` derives the per-packet transport code (HMAC-SHA256 over the payload type and payload), matching standard MeshCore region scoping.
+
+---
+
 ## Channel Management
 
 ### Channel Types
@@ -662,6 +758,7 @@ Byte values are authoritative; names are aliases. When reading firmware source, 
 | 0x11  | PACKET_CHANNEL_MSG_RECV_V3 | Channel message (V3 with SNR) |
 | 0x12  | PACKET_CHANNEL_INFO        | Channel information           |
 | 0x1B  | PACKET_CHANNEL_DATA_RECV   | Channel data datagram         |
+| 0x1E  | PACKET_TEST_CONFIG         | Test mode config (C6L only)   |
 | 0x80  | PACKET_ADVERTISEMENT       | Advertisement packet          |
 | 0x82  | PACKET_ACK                 | Acknowledgment                |
 | 0x83  | PACKET_MESSAGES_WAITING    | Messages waiting notification |

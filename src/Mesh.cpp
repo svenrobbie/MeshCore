@@ -344,7 +344,7 @@ void Mesh::removeSelfFromPath(Packet* pkt) {
 DispatcherAction Mesh::routeRecvPacket(Packet* packet) {
   uint8_t n = packet->getPathHashCount();
   if (packet->isRouteFlood() && !packet->isMarkedDoNotRetransmit()
-    && (n + 1)*packet->getPathHashSize() <= MAX_PATH_SIZE && allowPacketForward(packet)) {
+    && n < 63 && (n + 1)*packet->getPathHashSize() <= MAX_PATH_SIZE && allowPacketForward(packet)) {
     // append this node's hash to 'path'
     self_id.copyHashTo(&packet->path[n * packet->getPathHashSize()], packet->getPathHashSize());
     packet->setPathHashCount(n + 1);
@@ -486,6 +486,10 @@ Packet* Mesh::createPathReturn(const uint8_t* dest_hash, const uint8_t* secret, 
 }
 
 Packet* Mesh::createDatagram(uint8_t type, const Identity& dest, const uint8_t* secret, const uint8_t* data, size_t data_len) {
+  return createDatagram(type, dest, self_id, secret, data, data_len);
+}
+
+Packet* Mesh::createDatagram(uint8_t type, const Identity& dest, const Identity& src, const uint8_t* secret, const uint8_t* data, size_t data_len) {
   if (type == PAYLOAD_TYPE_TXT_MSG || type == PAYLOAD_TYPE_REQ || type == PAYLOAD_TYPE_RESPONSE) {
     if (data_len + CIPHER_MAC_SIZE + CIPHER_BLOCK_SIZE-1 > MAX_PACKET_PAYLOAD) return NULL;
   } else {
@@ -501,7 +505,7 @@ Packet* Mesh::createDatagram(uint8_t type, const Identity& dest, const uint8_t* 
 
   int len = 0;
   len += dest.copyHashTo(&packet->payload[len]);  // dest hash
-  len += self_id.copyHashTo(&packet->payload[len]);  // src hash
+  len += src.copyHashTo(&packet->payload[len]);  // src hash
   len += Utils::encryptThenMAC(secret, &packet->payload[len], data, data_len);
 
   packet->payload_len = len;
@@ -635,18 +639,32 @@ Packet* Mesh::createControlData(const uint8_t* data, size_t len) {
 }
 
 void Mesh::sendFlood(Packet* packet, uint32_t delay_millis, uint8_t path_hash_size) {
+  sendFloodWithPath(packet, NULL, 0, delay_millis, path_hash_size);
+}
+
+void Mesh::sendFlood(Packet* packet, uint16_t* transport_codes, uint32_t delay_millis, uint8_t path_hash_size) {
+  sendFloodWithPath(packet, NULL, 0, transport_codes, delay_millis, path_hash_size);
+}
+
+void Mesh::sendFloodWithPath(Packet* packet, const uint8_t* initial_path, uint8_t initial_hop_count,
+                             uint32_t delay_millis, uint8_t path_hash_size) {
   if (packet->getPayloadType() == PAYLOAD_TYPE_TRACE) {
     MESH_DEBUG_PRINTLN("%s Mesh::sendFlood(): TRACE type not suspported", getLogDateTime());
     return;
   }
-  if (path_hash_size == 0 || path_hash_size > 3) {
+  if (path_hash_size == 0 || path_hash_size > 3 || initial_hop_count > 63
+      || (uint16_t)initial_hop_count * path_hash_size > MAX_PATH_SIZE
+      || (initial_hop_count > 0 && initial_path == NULL)) {
     MESH_DEBUG_PRINTLN("%s Mesh::sendFlood(): invalid path_hash_size", getLogDateTime());
     return;
   }
 
   packet->header &= ~PH_ROUTE_MASK;
   packet->header |= ROUTE_TYPE_FLOOD;
-  packet->setPathHashSizeAndCount(path_hash_size, 0);
+  if (initial_hop_count > 0) {
+    memcpy(packet->path, initial_path, (size_t)initial_hop_count * path_hash_size);
+  }
+  packet->setPathHashSizeAndCount(path_hash_size, initial_hop_count);
 
   _tables->markSeen(packet); // mark this packet as already sent in case it is rebroadcast back to us
 
@@ -661,12 +679,15 @@ void Mesh::sendFlood(Packet* packet, uint32_t delay_millis, uint8_t path_hash_si
   sendPacket(packet, pri, delay_millis);
 }
 
-void Mesh::sendFlood(Packet* packet, uint16_t* transport_codes, uint32_t delay_millis, uint8_t path_hash_size) {
+void Mesh::sendFloodWithPath(Packet* packet, const uint8_t* initial_path, uint8_t initial_hop_count,
+                             uint16_t* transport_codes, uint32_t delay_millis, uint8_t path_hash_size) {
   if (packet->getPayloadType() == PAYLOAD_TYPE_TRACE) {
     MESH_DEBUG_PRINTLN("%s Mesh::sendFlood(): TRACE type not suspported", getLogDateTime());
     return;
   }
-  if (path_hash_size == 0 || path_hash_size > 3) {
+  if (path_hash_size == 0 || path_hash_size > 3 || initial_hop_count > 63
+      || (uint16_t)initial_hop_count * path_hash_size > MAX_PATH_SIZE
+      || (initial_hop_count > 0 && initial_path == NULL)) {
     MESH_DEBUG_PRINTLN("%s Mesh::sendFlood(): invalid path_hash_size", getLogDateTime());
     return;
   }
@@ -675,7 +696,10 @@ void Mesh::sendFlood(Packet* packet, uint16_t* transport_codes, uint32_t delay_m
   packet->header |= ROUTE_TYPE_TRANSPORT_FLOOD;
   packet->transport_codes[0] = transport_codes[0];
   packet->transport_codes[1] = transport_codes[1];
-  packet->setPathHashSizeAndCount(path_hash_size, 0);
+  if (initial_hop_count > 0) {
+    memcpy(packet->path, initial_path, (size_t)initial_hop_count * path_hash_size);
+  }
+  packet->setPathHashSizeAndCount(path_hash_size, initial_hop_count);
 
   _tables->markSeen(packet); // mark this packet as already sent in case it is rebroadcast back to us
 
@@ -690,9 +714,14 @@ void Mesh::sendFlood(Packet* packet, uint16_t* transport_codes, uint32_t delay_m
   sendPacket(packet, pri, delay_millis);
 }
 
-void Mesh::sendDirect(Packet* packet, const uint8_t* path, uint8_t path_len, uint32_t delay_millis) {
+void Mesh::sendDirectInternal(Packet* packet, const uint8_t* path, uint8_t path_len, uint8_t route_type,
+                              const uint16_t* transport_codes, uint32_t delay_millis) {
   packet->header &= ~PH_ROUTE_MASK;
-  packet->header |= ROUTE_TYPE_DIRECT;
+  packet->header |= route_type;
+  if (transport_codes) {
+    packet->transport_codes[0] = transport_codes[0];
+    packet->transport_codes[1] = transport_codes[1];
+  }
 
   uint8_t pri;
   if (packet->getPayloadType() == PAYLOAD_TYPE_TRACE) {   // TRACE packets are different
@@ -712,6 +741,15 @@ void Mesh::sendDirect(Packet* packet, const uint8_t* path, uint8_t path_len, uin
   }
   _tables->markSeen(packet); // mark this packet as already sent in case it is rebroadcast back to us
   sendPacket(packet, pri, delay_millis);
+}
+
+void Mesh::sendDirect(Packet* packet, const uint8_t* path, uint8_t path_len, uint32_t delay_millis) {
+  sendDirectInternal(packet, path, path_len, ROUTE_TYPE_DIRECT, NULL, delay_millis);
+}
+
+void Mesh::sendDirect(Packet* packet, const uint8_t* path, uint8_t path_len, uint16_t* transport_codes,
+                      uint32_t delay_millis) {
+  sendDirectInternal(packet, path, path_len, ROUTE_TYPE_TRANSPORT_DIRECT, transport_codes, delay_millis);
 }
 
 void Mesh::sendZeroHop(Packet* packet, uint32_t delay_millis) {

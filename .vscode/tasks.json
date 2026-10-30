@@ -9,6 +9,24 @@
 			],
 			"group": "build",
 			"label": "PlatformIO: Build"
+		},
+		{
+			"type": "PlatformIO",
+			"task": "Build (m5stack_unit_c6l_companion_radio_ble)",
+			"problemMatcher": [
+				"$platformio"
+			],
+			"group": "build",
+			"label": "PlatformIO: Build (m5stack_unit_c6l_companion_radio_ble)"
+		},
+		{
+			"type": "PlatformIO",
+			"task": "Build (m5stack_unit_c6l_companion_radio_ble_test)",
+			"problemMatcher": [
+				"$platformio"
+			],
+			"group": "build",
+			"label": "PlatformIO: Build (m5stack_unit_c6l_companion_radio_ble_test)"
 		}
 	]
 }

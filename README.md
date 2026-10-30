@@ -10,6 +10,10 @@ the **M5Stack Unit C6L**, which gets:
 * A custom companion UI: multi-page layout (system / stats / info) switched by short-press,
   long-press toggles the screen, with its own buzzer tones
 * A new SSD1306 SPI display driver that safely shares the SPI bus with the LoRa radio
+* Test mode in the C6L companion firmware: an app-controlled screen can send synthetic text
+  packets with random sender/receiver identities, configurable hop bytes (1/2/3-byte short IDs),
+  optional region scoping, and a flood/direct choice. Test state resets on reboot and normal
+  app messages are unaffected
 
 ## About MeshCore
 

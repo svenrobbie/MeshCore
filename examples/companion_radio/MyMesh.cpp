@@ -66,6 +66,12 @@
 #define CMD_GET_DEFAULT_FLOOD_SCOPE   64
 #define CMD_SEND_RAW_PACKET           65
 #define CMD_RUN_CLI_COMMAND           66  // v14+
+#if ENABLE_TEST_MODE
+#define CMD_TEST_SET_CONFIG           67  // v15+
+#define CMD_TEST_GET_CONFIG           68  // v15+
+#define CMD_TEST_SEND_TXT             69  // v15+
+#define CMD_TEST_SEND_GROUP_TXT       70  // v16+
+#endif
 
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
@@ -102,6 +108,9 @@
 #define RESP_CODE_CHANNEL_DATA_RECV   27
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
 #define RESP_CODE_CLI_REPLY           29  // v14+, a reply to CMD_RUN_CLI_COMMAND
+#if ENABLE_TEST_MODE
+#define RESP_CODE_TEST_CONFIG         30  // v15+, a reply to CMD_TEST_GET_CONFIG
+#endif
 
 #define MAX_CHANNEL_DATA_LENGTH       (MAX_FRAME_SIZE - 9)
 
@@ -524,6 +533,84 @@ void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pk
   }
 }
 
+#if ENABLE_TEST_MODE
+int MyMesh::sendTestText(uint32_t timestamp, const char* text, uint32_t& est_timeout) {
+  int text_len = strlen(text);
+  if (text_len > MAX_TEXT_LEN) return MSG_SEND_FAILED;
+
+  // Fresh random sender and receiver keypairs for every test packet.
+  mesh::LocalIdentity sender(getRNG());
+  mesh::LocalIdentity receiver(getRNG());
+
+  uint8_t secret[PUB_KEY_SIZE];
+  sender.calcSharedSecret(secret, receiver.pub_key);
+
+  uint8_t temp[5 + MAX_TEXT_LEN + 1];
+  memcpy(temp, &timestamp, 4);   // extra blob to help make packet_hash unique
+  temp[4] = 0;                   // attempt (plain text)
+  memcpy(&temp[5], text, text_len + 1);
+
+  mesh::Packet* pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, receiver, sender, secret, temp, 5 + text_len);
+  if (pkt == NULL) return MSG_SEND_FAILED;
+
+  uint32_t t = _radio->getEstAirtimeFor(pkt->getRawLength());
+
+  TransportKey scope;
+  memcpy(scope.key, test_region_key, sizeof(scope.key));
+  const uint8_t seed_hop_count = test_path_byte_len / test_hash_size;
+  if (scope.isNull()) {
+    sendFloodWithPath(pkt, test_path, seed_hop_count, 0, test_hash_size);
+  } else {
+    uint16_t codes[2];
+    codes[0] = scope.calcTransportCode(pkt);
+    codes[1] = 0;
+    // Transport codes select TRANSPORT_FLOOD, still a flood route.
+    sendFloodWithPath(pkt, test_path, seed_hop_count, codes, 0, test_hash_size);
+  }
+  est_timeout = calcFloodTimeoutMillisFor(t);
+  return MSG_SEND_SENT_FLOOD;
+}
+
+int MyMesh::sendTestGroupText(uint32_t timestamp, const mesh::GroupChannel& channel,
+                              const char* sender_name, const char* text, uint32_t& est_timeout) {
+  const int sender_len = strlen(sender_name);
+  const int text_len = strlen(text);
+  if (sender_len <= 0 || sender_len > 31 || sender_len + 2 + text_len > MAX_TEXT_LEN) {
+    return MSG_SEND_FAILED;
+  }
+
+  uint8_t temp[5 + MAX_TEXT_LEN];
+  memcpy(temp, &timestamp, 4);
+  temp[4] = 0;  // TXT_TYPE_PLAIN
+  int payload_len = 5;
+  memcpy(&temp[payload_len], sender_name, sender_len);
+  payload_len += sender_len;
+  temp[payload_len++] = ':';
+  temp[payload_len++] = ' ';
+  memcpy(&temp[payload_len], text, text_len);
+  payload_len += text_len;
+
+  mesh::Packet* pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel, temp, payload_len);
+  if (pkt == NULL) return MSG_SEND_FAILED;
+
+  const uint32_t airtime = _radio->getEstAirtimeFor(pkt->getRawLength());
+  TransportKey scope;
+  memcpy(scope.key, test_region_key, sizeof(scope.key));
+  const uint8_t seed_hop_count = test_path_byte_len / test_hash_size;
+  if (scope.isNull()) {
+    sendFloodWithPath(pkt, test_path, seed_hop_count, 0, test_hash_size);
+  } else {
+    uint16_t codes[2];
+    codes[0] = scope.calcTransportCode(pkt);
+    codes[1] = 0;
+    // Transport codes select TRANSPORT_FLOOD, still a flood route.
+    sendFloodWithPath(pkt, test_path, seed_hop_count, codes, 0, test_hash_size);
+  }
+  est_timeout = calcFloodTimeoutMillisFor(airtime);
+  return MSG_SEND_SENT_FLOOD;
+}
+#endif
+
 void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                            const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
@@ -912,6 +999,13 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   memset(advert_paths, 0, sizeof(advert_paths));
   memset(send_scope.key, 0, sizeof(send_scope.key));
   send_unscoped = false;
+#if ENABLE_TEST_MODE
+  test_mode_enabled = false;
+  test_hash_size = 1;
+  test_path_byte_len = 0;
+  memset(test_path, 0, sizeof(test_path));
+  memset(test_region_key, 0, sizeof(test_region_key));
+#endif
 
   // defaults
   _prefs.airtime_factor = 1.0;
@@ -2056,6 +2150,104 @@ void MyMesh::handleCmdFrame(size_t len) {
     } else {
       writeErrFrame(ERR_CODE_TABLE_FULL);
     }
+#if ENABLE_TEST_MODE
+  } else if (cmd_frame[0] == CMD_TEST_SET_CONFIG && len >= 20) {
+    uint8_t enabled = cmd_frame[1];
+    uint8_t hash_size = cmd_frame[2];
+    uint8_t path_byte_len = cmd_frame[3];
+    if (enabled > 1 || hash_size < 1 || hash_size > 3
+        || path_byte_len > MAX_PATH_SIZE || (path_byte_len % hash_size) != 0
+        || (path_byte_len / hash_size) > 62
+        || len < 20 + path_byte_len) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    } else {
+      test_mode_enabled = (enabled != 0);
+      test_hash_size = hash_size;
+      test_path_byte_len = path_byte_len;
+      memcpy(test_region_key, &cmd_frame[4], 16);
+      if (path_byte_len > 0) {
+        memcpy(test_path, &cmd_frame[20], path_byte_len);
+      }
+      writeOKFrame();
+    }
+  } else if (cmd_frame[0] == CMD_TEST_GET_CONFIG) {
+    int i = 0;
+    out_frame[i++] = RESP_CODE_TEST_CONFIG;
+    out_frame[i++] = test_mode_enabled ? 1 : 0;
+    out_frame[i++] = test_hash_size;
+    out_frame[i++] = test_path_byte_len;
+    memcpy(&out_frame[i], test_region_key, 16); i += 16;
+    memcpy(&out_frame[i], test_path, test_path_byte_len); i += test_path_byte_len;
+    _serial->writeFrame(out_frame, i);
+  } else if (cmd_frame[0] == CMD_TEST_SEND_TXT && len >= 5) {
+    if (!test_mode_enabled) {
+      writeErrFrame(ERR_CODE_BAD_STATE);
+    } else {
+      uint32_t timestamp;
+      memcpy(&timestamp, &cmd_frame[1], 4);
+      char* text = (char*)&cmd_frame[5];
+      int tlen = len - 5;
+      text[tlen] = 0; // ensure null
+      if (strlen(text) > MAX_TEXT_LEN) {
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      } else {
+        uint32_t est_timeout;
+        int result = sendTestText(timestamp, text, est_timeout);
+        if (result == MSG_SEND_FAILED) {
+          writeErrFrame(ERR_CODE_TABLE_FULL);
+        } else {
+          int i = 0;
+          out_frame[i++] = RESP_CODE_SENT;
+          out_frame[i++] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
+          uint32_t expected_ack = 0;
+          memcpy(&out_frame[i], &expected_ack, 4); i += 4;
+          memcpy(&out_frame[i], &est_timeout, 4); i += 4;
+          _serial->writeFrame(out_frame, i);
+        }
+      }
+    }
+  } else if (cmd_frame[0] == CMD_TEST_SEND_GROUP_TXT && len >= 9) {
+    if (!test_mode_enabled) {
+      writeErrFrame(ERR_CODE_BAD_STATE);
+    } else {
+      const uint8_t channel_idx = cmd_frame[1];
+      uint32_t timestamp;
+      memcpy(&timestamp, &cmd_frame[2], 4);
+      const uint8_t sender_len = cmd_frame[6];
+      const int text_start = 7 + sender_len;
+      const int text_len = len - text_start;
+      if (sender_len == 0 || sender_len > 31 || text_len <= 0
+          || sender_len + 2 + text_len > MAX_TEXT_LEN) {
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      } else {
+        ChannelDetails channel;
+        if (!getChannel(channel_idx, channel)) {
+          writeErrFrame(ERR_CODE_NOT_FOUND);
+        } else {
+          char sender_name[32];
+          memcpy(sender_name, &cmd_frame[7], sender_len);
+          sender_name[sender_len] = 0;
+          char text[MAX_TEXT_LEN + 1];
+          memcpy(text, &cmd_frame[text_start], text_len);
+          text[text_len] = 0;
+          uint32_t est_timeout;
+          const int result = sendTestGroupText(
+              timestamp, channel.channel, sender_name, text, est_timeout);
+          if (result == MSG_SEND_FAILED) {
+            writeErrFrame(ERR_CODE_TABLE_FULL);
+          } else {
+            int i = 0;
+            out_frame[i++] = RESP_CODE_SENT;
+            out_frame[i++] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
+            const uint32_t expected_ack = 0;
+            memcpy(&out_frame[i], &expected_ack, 4); i += 4;
+            memcpy(&out_frame[i], &est_timeout, 4); i += 4;
+            _serial->writeFrame(out_frame, i);
+          }
+        }
+      }
+    }
+#endif
   } else {
     writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
     MESH_DEBUG_PRINTLN("ERROR: unknown command: %02X", cmd_frame[0]);
