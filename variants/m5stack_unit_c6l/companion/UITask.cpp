@@ -4,7 +4,7 @@
 
 #define AUTO_OFF_MILLIS    3600000
 #define BOOT_SCREEN_MILLIS 4000
-#define PAGE_COUNT         3
+#define PAGE_COUNT         4
 #define SCROLL_SPEED_MS    150
 #define SCROLL_PAUSE_MS    2000
 
@@ -84,7 +84,8 @@ void UITask::renderScreen() {
   switch (_cur_page) {
     case 0: renderPageSystem(); break;
     case 1: renderPageStats();  break;
-    case 2: renderPageInfo();   break;
+    case 2: renderPageFilter(); break;
+    case 3: renderPageInfo();   break;
   }
 }
 
@@ -172,6 +173,37 @@ void UITask::renderPageStats() {
   float dc = (up_ms > 0) ? 100.0f * (float)air_ms / (float)up_ms : 0.0f;
   snprintf(tmp, sizeof(tmp), "AirTX:%.1f%%", dc);
   _display->setCursor(0, 32);
+  _display->print(tmp);
+}
+
+void UITask::renderPageFilter() {
+  char tmp[32];
+  const Counters& c = the_mesh.getCompanionFilterCounters();
+  bool on = the_mesh.isCompanionFilterEnabled();
+  uint32_t total = c.malformed + c.age + c.path + c.sender + c.text;
+
+  snprintf(tmp, sizeof(tmp), "%s %lu", on ? "ON" : "OFF", (unsigned long)total);
+  _display->setCursor(0, 0);
+  _display->print(tmp);
+
+  snprintf(tmp, sizeof(tmp), "Mal:%lu", (unsigned long)c.malformed);
+  _display->setCursor(0, 8);
+  _display->print(tmp);
+
+  snprintf(tmp, sizeof(tmp), "Age:%lu", (unsigned long)c.age);
+  _display->setCursor(0, 16);
+  _display->print(tmp);
+
+  snprintf(tmp, sizeof(tmp), "Pth:%lu", (unsigned long)c.path);
+  _display->setCursor(0, 24);
+  _display->print(tmp);
+
+  snprintf(tmp, sizeof(tmp), "Snd:%lu", (unsigned long)c.sender);
+  _display->setCursor(0, 32);
+  _display->print(tmp);
+
+  snprintf(tmp, sizeof(tmp), "Txt:%lu", (unsigned long)c.text);
+  _display->setCursor(0, 40);
   _display->print(tmp);
 }
 

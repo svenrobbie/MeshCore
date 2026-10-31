@@ -683,6 +683,21 @@ Meaning:
 * 2 packets blocked by hop limit
 * 10 packets blocked by rate limiting
 
+## On-device page
+
+Repeaters with a display show a packet-filter page next to the normal status
+screen:
+
+* short press the user button: toggle the display on/off
+* long press (about one second): switch between the main page and the filter page
+
+The filter page shows the filter state, the total number of blocked packets and
+the drops per reason. Narrow 64x48 displays use compact labels (`H` hops,
+`R` rate, `C` channel, `K` hash, `M` malformed, `A` advert, `P` path,
+`S` sender, `T` text, `G` age); wider displays show the full labels. These are
+the same RAM counters as the CLI, so they reset on reboot and with
+`clear stats`.
+
 ## Per-topic detail
 
 `filter` answers *how much was dropped*; `filter stats <topic>` answers *why,

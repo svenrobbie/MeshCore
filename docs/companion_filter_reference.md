@@ -179,6 +179,14 @@ Per topic:
 Counters live in RAM and restart at zero after a reboot. A message is counted
 once, even when several repeaters relay it.
 
+## On-device page
+
+Companion builds with a display get an extra status page for the receive
+filter. On the generic UI use the next-page key or button to reach it; on the
+M5Stack C6L companion UI a short press cycles through the pages. The page shows
+the filter state, the total number of filtered messages and the per-reason
+counters (malformed, age, path, sender, text).
+
 ---
 
 # Persistent Configuration

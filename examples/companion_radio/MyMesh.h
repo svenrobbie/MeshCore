@@ -123,6 +123,10 @@ public:
   const char *getNodeName();
   NodePrefs *getNodePrefs();
   uint32_t getBLEPin();
+
+  // Receive filter state for the on-device status page.
+  const Counters& getCompanionFilterCounters() const { return _cfilter.counters(); }
+  bool isCompanionFilterEnabled() const { return _cfilter.isEnabled(); }
   void setBLEPin(uint32_t active_pin);
 
   void loop();
