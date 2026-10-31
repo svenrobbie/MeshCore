@@ -1125,22 +1125,10 @@ struct FreqRange {
   uint32_t lower_freq, upper_freq;
 };
 
-static FreqRange repeat_freq_ranges[] = {
-  #ifdef ALLOWED_REPEAT_FREQ_RANGE
-  ALLOWED_REPEAT_FREQ_RANGE
-  #else
-  { 433000, 433000 },
-  { 869495, 869495 },
-  { 918000, 918000 }
-  #endif
-};
-
 bool MyMesh::isValidClientRepeatFreq(uint32_t f) const {
-  for (int i = 0; i < sizeof(repeat_freq_ranges)/sizeof(repeat_freq_ranges[0]); i++) {
-    auto r = &repeat_freq_ranges[i];
-    if (f >= r->lower_freq && f <= r->upper_freq) return true;
-  }
-  return false;
+  // Client repeat mode is a local forwarding feature. Allow any frequency
+  // accepted by CMD_SET_RADIO_PARAMS instead of restricting it to presets.
+  return f >= 150000 && f <= 2500000;
 }
 
 void MyMesh::startInterface(BaseSerialInterface &serial) {
@@ -2130,14 +2118,14 @@ void MyMesh::handleCmdFrame(size_t len) {
     out_frame[i++] = _prefs.autoadd_max_hops;
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_GET_ALLOWED_REPEAT_FREQ) {
-    int i = 0;
-    out_frame[i++] = RESP_ALLOWED_REPEAT_FREQ;
-    for (int k = 0; k < sizeof(repeat_freq_ranges)/sizeof(repeat_freq_ranges[0]) && i + 8 < sizeof(out_frame); k++) {
-      auto r = &repeat_freq_ranges[k];
-      memcpy(&out_frame[i], &r->lower_freq, 4); i += 4;
-      memcpy(&out_frame[i], &r->upper_freq, 4); i += 4;
-    }
-    _serial->writeFrame(out_frame, i);
+    // Return a single continuous range so clients can enable repeat mode
+    // with any radio frequency supported by the firmware.
+    out_frame[0] = RESP_ALLOWED_REPEAT_FREQ;
+    uint32_t lower_freq = 150000;
+    uint32_t upper_freq = 2500000;
+    memcpy(&out_frame[1], &lower_freq, 4);
+    memcpy(&out_frame[5], &upper_freq, 4);
+    _serial->writeFrame(out_frame, 9);
   } else if (cmd_frame[0] == CMD_SEND_RAW_PACKET && len >= 4) {
     auto pkt = obtainNewPacket();
     if (pkt) {

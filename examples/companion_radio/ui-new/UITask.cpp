@@ -304,8 +304,12 @@ public:
       display.drawTextCentered(display.width() / 2, 80, tmp);
       #endif
       #ifdef ENABLE_WIFI_INTERFACE
-        IPAddress ip = WiFi.localIP();
-        snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+        if (WiFi.status() == WL_CONNECTED) {
+          IPAddress ip = WiFi.localIP();
+          snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+        } else {
+          snprintf(tmp, sizeof(tmp), "WiFi status: %d", (int)WiFi.status());
+        }
         display.setTextSize(1);
         display.drawTextCentered(display.width() / 2, 32, tmp);
       #endif
