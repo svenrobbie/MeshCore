@@ -127,6 +127,9 @@ public:
     initLimiters();
   }
   void resetStats(void) { _cnt.reset(); }
+  const Counters& counters(void) const { return _cnt; }
+  bool isEnabled(void) const { return _prefs.filter_enabled; }
+  bool isDryRun(void) const { return _prefs.dryrun; }
   bool allowPacketForward(const mesh::Packet *packet);
   bool hasPriority(const mesh::Packet *packet);
   static bool srcHash(const mesh::Packet *packet, uint8_t *out);

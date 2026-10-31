@@ -91,6 +91,7 @@ class HomeScreen : public UIScreen {
     FIRST,
     RECENT,
     RADIO,
+    FILTER,
     BLUETOOTH,
     ADVERT,
 #if ENV_INCLUDE_GPS == 1
@@ -375,6 +376,28 @@ public:
       display.print(tmp);
       display.setCursor(0, 53);
       sprintf(tmp, "Noise floor: %d", radio_driver.getNoiseFloor());
+      display.print(tmp);
+    } else if (_page == HomePage::FILTER) {
+      const Counters& c = the_mesh.getCompanionFilterCounters();
+      bool on = the_mesh.isCompanionFilterEnabled();
+      uint32_t total = c.malformed + c.age + c.path + c.sender + c.text;
+
+      display.setColor(UIColor::primary_txt);
+      display.setTextSize(1);
+      display.setCursor(0, 20);
+      sprintf(tmp, "Filter: %s   (%lu)", on ? "ON" : "OFF", (unsigned long)total);
+      display.print(tmp);
+
+      display.setCursor(0, 31);
+      sprintf(tmp, "Mal: %lu    Age: %lu", (unsigned long)c.malformed, (unsigned long)c.age);
+      display.print(tmp);
+
+      display.setCursor(0, 42);
+      sprintf(tmp, "Path: %lu   Sender: %lu", (unsigned long)c.path, (unsigned long)c.sender);
+      display.print(tmp);
+
+      display.setCursor(0, 53);
+      sprintf(tmp, "Text: %lu", (unsigned long)c.text);
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
       display.setColor(UIColor::corp_blue);

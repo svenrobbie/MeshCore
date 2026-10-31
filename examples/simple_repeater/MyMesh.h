@@ -189,6 +189,12 @@ public:
   NodePrefs* getNodePrefs() {
     return &_prefs;
   }
+
+  // Packet filter state for the on-device status page.
+  const Counters& getFilterCounters() const { return _filter.counters(); }
+  bool isFilterEnabled() const { return _filter.isEnabled(); }
+  bool isFilterDryRun() const { return _filter.isDryRun(); }
+
   bool isHiddenNode() const {
     return _prefs.advert_interval == 0 && _prefs.flood_advert_interval == 0;
   }

@@ -26,6 +26,7 @@ public:
   void onQueueSizeChanged(int msgcount) override;
   void renderPageSystem();
   void renderPageStats();
+  void renderPageFilter();
   void renderPageInfo();
 
   bool isBuzzerQuiet();

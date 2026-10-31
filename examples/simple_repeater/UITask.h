@@ -19,8 +19,14 @@ class UITask {
 #endif
   unsigned long _powering_off_at = 0;
   unsigned long _started_at = 0;
+  int _cur_page = 0;
+  unsigned long _btn_down_at = 0;
+  bool _long_handled = false;
 
+  void handleButton(bool btnDown);
   void renderCurrScreen();
+  void renderMainPage();
+  void renderFilterPage();
 public:
   UITask(mesh::MainBoard& board, DisplayDriver& display) : _board(&board), _display(&display) { _next_read = _next_refresh = 0; }
   void begin(NodePrefs* node_prefs, const char* build_date, const char* firmware_version);
