@@ -182,10 +182,15 @@ once, even when several repeaters relay it.
 ## On-device page
 
 Companion builds with a display get an extra status page for the receive
-filter. On the generic UI use the next-page key or button to reach it; on the
-M5Stack C6L companion UI a short press cycles through the pages. The page shows
-the filter state, the total number of filtered messages and the per-reason
-counters (malformed, age, path, sender, text).
+filter. The page shows the filter state, the total number of filtered messages
+and the per-reason counters (malformed, age, path, sender, text).
+
+* `ui-new` and `ui-tiny`: use the next/previous page key or button.
+* `ui-orig`: a short press cycles between the home and filter pages.
+* M5Stack C6L companion UI: a short press cycles through all pages.
+
+The filter page is included in every companion UI, so all display-equipped
+companion builds get it, including the BLE test build.
 
 ---
 
