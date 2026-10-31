@@ -9,6 +9,8 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 - [Statistics](#statistics)
 - [Logging](#logging)
 - [Information](#info)
+- [Packet Filter](#packet-filter-repeater-only)
+- [Companion Receive Filter](#companion-receive-filter-companion-only)
 - [Configuration](#configuration)
   - [Radio](#radio)
   - [System](#system)
@@ -178,6 +180,156 @@ This document provides an overview of CLI commands that can be sent to MeshCore 
 
 ### Show the hardware name
 **Usage:** `board`
+
+---
+
+## Packet Filter (Repeater Only)
+
+The packet filter drops flood (multi-hop) packets that exceed configurable limits before they are repeated, reducing channel congestion. All settings are persisted to `/filter_prefs` and survive reboots.
+
+Find more information in [packet_filter_reference.md](packet_filter_reference.md)
+
+Configuration and statistics are kept apart: `filter <setting>` shows and changes a setting, `filter stats <topic>` reports what that setting dropped.
+
+---
+
+### Enabling and resetting
+**Usage:**
+- `filter help` — list every subcommand
+- `filter on`
+- `filter off`
+- `filter reset` — restore the default settings (counters are not affected)
+- `filter dryrun` / `filter dryrun <on|off>` — count drops but keep forwarding, to size a setting before enforcing it
+- `filter types` — list the packet type IDs used by `hops`, `rate` and `count`
+
+**Note:** The filter is disabled by default. Direct-routed packets and packets involving known ACL contacts always bypass it. While dry-run is on the status line ends in `(dry-run)`.
+
+---
+
+### Status
+**Usage:**
+- `filter` — status and drop totals per reason
+- `filter count` — hop and rate drops per packet type
+
+**Example:**
+```text
+filter
+> Filter on: Blocked [ Hops: 326 | Rate: 0 | Channel: 0 | Hash: 8097 | Malformed: 0 ]
+```
+
+**Note:** Statistics live in RAM and are cleared by `clear stats` and on reboot.
+
+---
+
+### Drop statistics per topic
+**Usage:**
+- `filter stats` — list the available topics
+- `filter stats hops`
+- `filter stats rate`
+- `filter stats hash`
+- `filter stats channel`
+- `filter stats malformed`
+- `filter stats top`
+- `filter stats advert` — drops by the per-origin advert window
+- `filter stats path` — drops per blocked path prefix
+- `filter stats air` — estimated time-on-air the drops saved (in dry-run: would have saved)
+- `filter stats sender` / `filter stats text` — drops (and throttle passes) per sender/text rule
+- `filter stats age` — group texts dropped by the message age limit (`filter age <minutes>|off`)
+
+**Example:**
+```text
+filter stats hops
+[TYPE: DROPS(MAX)]
+04: 326(8)
+05: 8097(32)
+```
+
+**Note:** `hops` and `rate` list only the packet types that dropped something, with the limit that caused it in brackets. `top` lists the source identity hashes responsible for the most drops; a packet only carries a 1-byte identity hash, so nodes sharing a leading byte are counted together — it is a lead, not proof. See [packet_filter_reference.md](packet_filter_reference.md) for which payload types can be attributed.
+
+---
+
+### Hop limits
+**Usage:**
+- `filter hops` — show the current limits
+- `filter hops <type> <max_hops>`
+
+**Parameters:**
+- `type`: Packet type ID, `00`–`11`. See `filter types`.
+- `max_hops`: `0`–`64`. Flood packets that already carry this many hops are dropped.
+
+**Note:** The drops are reported by `filter stats hops`.
+
+---
+
+### Rate limits
+**Usage:**
+- `filter rate` — show the current limits
+- `filter rate <type> <limit> <seconds> [soft]`
+
+**Parameters:**
+- `type`: Packet type ID, `00`–`11`.
+- `limit`: Packets allowed per window; `0` disables rate limiting for that type.
+- `seconds`: Length of the window.
+- `soft` (optional): Soft cutoff. Above this count the packet is forwarded with a probability that ramps linearly to zero at `limit`, instead of a hard drop. Must be less than `limit`; `0` (default) keeps the hard cutoff.
+
+**Note:** Rate limits apply per packet type, not per sender. The drops are reported by `filter stats rate`.
+
+---
+
+### Channel filtering (GRP_TXT)
+**Usage:**
+- `filter channel list`
+- `filter channel add <#name | Public>`
+- `filter channel remove <#name | Public>`
+
+**Parameters:**
+- `name`: Channel name to block, or `Public` for the public channel. Group-text packets on a blocked channel are dropped.
+
+**Note:** Up to 16 channels can be blocked. The value in brackets is the channel hash byte the filter matches on. Drops per channel are reported by `filter stats channel`.
+
+---
+
+### Minimum path hash size
+**Usage:**
+- `filter hash` — show the current minimum
+- `filter hash <min_bytes>`
+
+**Parameters:**
+- `min_bytes`: Minimum path hash size, `1`–`3`. Flood packets carrying a smaller path hash are dropped.
+
+**Note:** Nodes flood with 1-byte path hashes by default, so a minimum of `2` discards nearly all flood traffic rather than just the abusive part. `filter stats hash` splits the drops by the path hash size they carried, which shows exactly that.
+
+---
+
+### Malformed message scanning
+**Usage:**
+- `filter malformed` — show the current state
+- `filter malformed on`
+- `filter malformed off`
+
+**Note:** When enabled, group-text packets on the public channel are decrypted and dropped if their content is not valid UTF-8. `filter stats malformed` splits the drops by rejection reason.
+
+---
+
+## Companion Receive Filter (Companion Only)
+
+The DMC companion firmware has its own `filter` command that keeps junk and unwanted channel messages out of the app. It is sent through the app's command console (`CMD_RUN_CLI_COMMAND`), USB serial, or remote CLI. Settings are persisted to `/cfilter.json`. Disabled by default; direct and addressed traffic is never filtered.
+
+Find more information in [companion_filter_reference.md](companion_filter_reference.md)
+
+**Usage:**
+- `filter` — status: `> Filter on: Hidden [ Malformed: N | Age: N | Path: N | Sender: N | Text: N ]`
+- `filter help`
+- `filter on` / `filter off`
+- `filter reset` — restore the defaults (counters are not affected)
+- `filter malformed` / `filter malformed <on|off>` — drop group text with a bad timestamp, empty text or invalid UTF-8, on every channel the companion holds
+- `filter age` / `filter age <minutes>|off` — drop group text older than this (1–10080)
+- `filter path list|add|remove <hex>` — drop flood adverts and group traffic relayed by a repeater whose ID starts with the prefix (2–8 hex digits, up to 8)
+- `filter sender list|add <name> [secs] [prob]|remove <name>` — hide group text by sender (up to 8; `Bot*` = prefix)
+- `filter text list|add <pattern> [secs] [prob]|remove <pattern>` — hide group text by content (up to 8; `^` = start of message)
+- `filter stats malformed|age|path|sender|text` — what each setting filtered, in the same formats as the repeater filter
+
+**Note:** Malformed, age and path filtering *drop* a packet: with repeat enabled it is not repeated either. Sender and text rules only *hide* it: it is still repeated for others.
 
 ---
 

@@ -6,6 +6,8 @@ Below are a few quick start guides.
 
 - [Frequently Asked Questions](./faq.md)
 - [CLI Commands](./cli_commands.md)
+- [Packet Filter Reference](./packet_filter_reference.md)
+- [Companion Filter Reference](./companion_filter_reference.md)
 - [Companion Protocol](./companion_protocol.md)
 - [Packet Format](./packet_format.md)
 - [QR Codes](./qr_codes.md)
