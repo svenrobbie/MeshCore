@@ -37,6 +37,7 @@ class UITask : public AbstractUITask {
   bool _need_refresh = true;
   bool _displayWasOn = false;  // Track display state before button press
   unsigned long ui_started_at;
+  int _cur_page = 0;           // 0 = home, 1 = filter
 
   // Button handlers
 #ifdef PIN_USER_BTN
@@ -47,6 +48,7 @@ class UITask : public AbstractUITask {
 #endif
 
   void renderCurrScreen();
+  void renderFilterPage();
   void userLedHandler();
   void renderBatteryIndicator(uint16_t batteryMilliVolts);
   

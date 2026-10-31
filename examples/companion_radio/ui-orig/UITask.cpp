@@ -5,6 +5,7 @@
 
 #define AUTO_OFF_MILLIS     15000   // 15 seconds
 #define BOOT_SCREEN_MILLIS   3000   // 3 seconds
+#define PAGE_COUNT              2   // home + receive filter
 
 #if defined(PIN_STATUS_LED) || defined(PIN_STATUS_LED_R)
 #define LED_ON_MILLIS     20
@@ -278,6 +279,8 @@ void UITask::renderCurrScreen() {
     uint16_t textWidth = _display->getTextWidth(_version_info);
     _display->setCursor((_display->width() - textWidth) / 2, 22);
     _display->print(_version_info);
+  } else if (_cur_page == 1) {  // receive filter
+    renderFilterPage();
   } else {  // home screen
     // node name
     _display->setCursor(0, 0);
@@ -312,6 +315,64 @@ void UITask::renderCurrScreen() {
     }
   }
   _need_refresh = false;
+}
+
+void UITask::renderFilterPage() {
+  char tmp[80];
+  const Counters& c = the_mesh.getCompanionFilterCounters();
+  bool on = the_mesh.isCompanionFilterEnabled();
+  uint32_t total = c.malformed + c.age + c.path + c.sender + c.text;
+
+  _display->setTextSize(1);
+  _display->setColor(UIColor::primary_txt);
+
+  if (_display->height() >= 56) {
+    // Room for one counter per line with readable labels.
+    _display->setCursor(0, 0);
+    sprintf(tmp, "Filter: %s", on ? "ON" : "OFF");
+    _display->print(tmp);
+
+    _display->setCursor(0, 9);
+    sprintf(tmp, "Blocked: %lu", (unsigned long)total);
+    _display->print(tmp);
+
+    _display->setCursor(0, 18);
+    sprintf(tmp, "Malformed: %lu", (unsigned long)c.malformed);
+    _display->print(tmp);
+
+    _display->setCursor(0, 27);
+    sprintf(tmp, "Age: %lu", (unsigned long)c.age);
+    _display->print(tmp);
+
+    _display->setCursor(0, 36);
+    sprintf(tmp, "Path: %lu", (unsigned long)c.path);
+    _display->print(tmp);
+
+    _display->setCursor(0, 45);
+    sprintf(tmp, "Sender: %lu", (unsigned long)c.sender);
+    _display->print(tmp);
+
+    _display->setCursor(0, 54);
+    sprintf(tmp, "Text: %lu", (unsigned long)c.text);
+    _display->print(tmp);
+  } else {
+    // Small display: compact labels, two counters per line.
+    _display->setCursor(0, 0);
+    sprintf(tmp, "Filter %s %lu", on ? "ON" : "OFF", (unsigned long)total);
+    _display->print(tmp);
+
+    _display->setCursor(0, 9);
+    sprintf(tmp, "Mal:%lu Age:%lu", (unsigned long)c.malformed, (unsigned long)c.age);
+    _display->print(tmp);
+
+    _display->setCursor(0, 18);
+    sprintf(tmp, "Pth:%lu Snd:%lu", (unsigned long)c.path, (unsigned long)c.sender);
+    _display->print(tmp);
+
+    _display->setCursor(0, 27);
+    sprintf(tmp, "Txt:%lu", (unsigned long)c.text);
+    _display->print(tmp);
+  }
 }
 
 #ifdef STATUS_LED_RGB
@@ -524,6 +585,7 @@ void UITask::handleButtonAnyPress() {
     _displayWasOn = _display->isOn();  // Track display state before any action
     if (!_displayWasOn) {
       _display->turnOn();
+      _cur_page = 0;                   // always wake on the home page
     }
     _auto_off = millis() + AUTO_OFF_MILLIS;   // extend auto-off timer
   }
@@ -538,7 +600,8 @@ void UITask::handleButtonShortPress() {
       if (_origin[0] && _msg[0]) {
         clearMsgPreview();
       } else {
-        // Otherwise, refresh the display
+        // Otherwise, cycle between the home and filter pages
+        _cur_page = (_cur_page + 1) % PAGE_COUNT;
         _need_refresh = true;
       }
     } else {
