@@ -212,6 +212,11 @@ void setup() {
 
 // add wifi interface
 #ifdef ENABLE_WIFI_INTERFACE
+  // Builds with fixed Wi-Fi credentials must not be overridden by stale
+  // settings saved in flash from an earlier network configuration.
+#if defined(WIFI_FORCE_BUILD_CONFIG)
+  wifi_enabled = wifi_ssid[0] != 0;
+#else
   // use wifi ssid and password from prefs if ssid is not empty, otherwise use the build flag defaults
   if (the_mesh.getNodePrefs()->wifi_ssid[0]) {
     strcpy(wifi_ssid, the_mesh.getNodePrefs()->wifi_ssid);
@@ -219,9 +224,11 @@ void setup() {
   }
   // only start wifi if enabled and ssid is not empty
   wifi_enabled = the_mesh.getNodePrefs()->wifi_enabled;
+#endif
   if (wifi_enabled && wifi_ssid[0]) {
 #if defined(ESP32)
     board.setInhibitSleep(true);   // prevent sleep when WiFi is active
+    WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
 
     WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info){
