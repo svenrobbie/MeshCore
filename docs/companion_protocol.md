@@ -454,9 +454,9 @@ Byte 0: 0x14
 
 ### 9. Test Mode (C6L companion builds only)
 
-**Availability**: Compiled only when `ENABLE_TEST_MODE=1`. Enabled in the C6L USB and WiFi companion builds and the dedicated `m5stack_unit_c6l_companion_radio_ble_test` environment; the regular BLE build omits it. Direct test sends need firmware code 15+, and group sends need code 16+. Repeater, room server and KISS builds do not include test mode.
+**Availability**: Compiled only when `ENABLE_TEST_MODE=1`. Enabled in the C6L USB and WiFi companion builds and the dedicated `m5stack_unit_c6l_companion_radio_ble_test` environment; the regular BLE build omits it. Direct test sends need firmware code 15+, group sends need code 16+, and flood-advert test sends need code 17+. Repeater, room server and KISS builds do not include test mode.
 
-**Purpose**: Send synthetic text packets for testing how other nodes validate and forward traffic. Direct test packets use fresh random sender and receiver keypairs. Group test packets use the selected channel key and a fresh random sender display name; group payloads do not contain a sender public key. These packets are TX-only: no ACK is expected, and no real node can decrypt direct test packets.
+**Purpose**: Send synthetic packets for testing how other nodes validate and forward traffic. Direct test packets use fresh random sender and receiver keypairs. Group test packets use the selected channel key and a fresh random sender display name; group payloads do not contain a sender public key. Flood adverts use a fresh random repeater identity for every advert. These packets are TX-only: no ACK is expected, and no real node can decrypt direct test packets.
 
 **State is RAM-only**: the configuration below starts disabled after every reboot and is never written to `NodePrefs`. Test mode is separate from normal app messages, which are unaffected.
 
@@ -471,6 +471,7 @@ Byte 2:      hash_size      bytes per path hop: 1, 2 or 3
 Byte 3:      path_byte_len  0..64 (synthetic flood-path prefix length)
 Bytes 4-19:  region_key     16 bytes, all zero = unscoped
 Bytes 20+:   path bytes     path_byte_len bytes
+Next byte:   hop_count      optional (firmware code 17+), 0..path_byte_len/hash_size
 ```
 
 Validation:
@@ -478,6 +479,7 @@ Validation:
 - `enabled` must be `0` or `1`.
 - `hash_size` must be `1`, `2` or `3`.
 - `path_byte_len` must be `<= 64`, divisible by `hash_size`, and the resulting hop count must be `<= 62` so flood routers have room to append their own hashes.
+- `hop_count` is optional. When omitted (older hosts), the firmware uses the full configured path. When present it must not exceed `path_byte_len / hash_size`; it selects how many fake hops are prepended to text and group test sends.
 - Invalid values return `PACKET_ERROR` with `ERR_CODE_ILLEGAL_ARG`.
 
 **Response**: `PACKET_OK` on success.
@@ -497,6 +499,7 @@ Byte 2:      hash_size
 Byte 3:      path_byte_len
 Bytes 4-19:  region_key
 Bytes 20+:   path bytes
+Next byte:   hop_count      (firmware code 17+; older firmware omits it)
 ```
 
 #### Sending a test packet
@@ -535,6 +538,27 @@ Bytes 7+:   sender name UTF-8, followed by message UTF-8
 
 The firmware formats group payload text as `<sender name>: <message>` and encrypts it with the selected channel key. The sender name plus `: ` and message must fit in `MAX_TEXT_LEN` (160 bytes). The reply is the same 10-byte `PACKET_MSG_SENT` frame described above, with ACK hash 0.
 
+`CMD_TEST_SEND_ADVERT` (`0x47` / 71, firmware code 17+):
+
+```
+Byte 0:       0x47
+Byte 1:       hash_size      bytes per path hop: 1, 2 or 3
+Byte 2:       hop_count      0..62
+Bytes 3-6:    latitude       int32 little-endian, degrees * 1e6
+Bytes 7-10:   longitude      int32 little-endian, degrees * 1e6
+Byte 11:      name_len       1..23 UTF-8 bytes
+Bytes 12+:    name           UTF-8
+Next bytes:   path           hop_count * hash_size bytes
+```
+
+The firmware creates a fresh random repeater identity for every call, signs an `ADV_TYPE_REPEATER` advert with the supplied name and position, and sends it as a flood with the supplied fake path prefix. The region scope from `CMD_TEST_SET_CONFIG` is applied. The reply is the same 10-byte `PACKET_MSG_SENT` frame described above, with ACK hash 0.
+
+Errors:
+
+- Test mode disabled → `PACKET_ERROR` with `ERR_CODE_BAD_STATE`.
+- Invalid hash size, hop count, path length, or name length → `PACKET_ERROR` with `ERR_CODE_ILLEGAL_ARG`.
+- Packet pool empty → `PACKET_ERROR` with `ERR_CODE_TABLE_FULL`.
+
 #### Routing and scoping
 
 | `path_byte_len` | `region_key` | Result |
@@ -543,7 +567,7 @@ The firmware formats group payload text as `<sender name>: <message>` and encryp
 | any | non-zero | Transport-scoped flood, seeded with the supplied path prefix |
 
 - Test packets always use flood routing. Path bytes seed the mutable flood path exactly as supplied, and forwarding routers append their own hash after the prefix. Arbitrary/fake bytes are useful for testing validation and drop behaviour; they do not select direct routing.
-- `hash_size` selects how many bytes make up each hop, encoded in the packet as `path_len = ((hash_size - 1) << 6) | hop_count`, where `hop_count = path_byte_len / hash_size`.
+- `hash_size` selects how many bytes make up each hop, encoded in the packet as `path_len = ((hash_size - 1) << 6) | hop_count`. For text and group sends, `hop_count` is the configured optional hop count (or the full path when omitted); for adverts it is supplied in the send command.
 - A non-zero `region_key` derives the per-packet transport code (HMAC-SHA256 over the payload type and payload), matching standard MeshCore region scoping.
 
 ---

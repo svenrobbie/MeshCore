@@ -1,6 +1,8 @@
 #include <helpers/AdvertDataHelpers.h>
 #include <helpers/UTF8Helpers.h>
 
+#include <cstdio>
+
   uint8_t AdvertDataBuilder::encodeTo(uint8_t app_data[]) {
     app_data[0] = _type;
     int i = 1;

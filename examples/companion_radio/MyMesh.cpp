@@ -71,6 +71,7 @@
 #define CMD_TEST_GET_CONFIG           68  // v15+
 #define CMD_TEST_SEND_TXT             69  // v15+
 #define CMD_TEST_SEND_GROUP_TXT       70  // v16+
+#define CMD_TEST_SEND_ADVERT          71  // v17+
 #endif
 
 // Stats sub-types for CMD_GET_STATS
@@ -557,7 +558,7 @@ int MyMesh::sendTestText(uint32_t timestamp, const char* text, uint32_t& est_tim
 
   TransportKey scope;
   memcpy(scope.key, test_region_key, sizeof(scope.key));
-  const uint8_t seed_hop_count = test_path_byte_len / test_hash_size;
+  const uint8_t seed_hop_count = test_hop_count;
   if (scope.isNull()) {
     sendFloodWithPath(pkt, test_path, seed_hop_count, 0, test_hash_size);
   } else {
@@ -596,7 +597,7 @@ int MyMesh::sendTestGroupText(uint32_t timestamp, const mesh::GroupChannel& chan
   const uint32_t airtime = _radio->getEstAirtimeFor(pkt->getRawLength());
   TransportKey scope;
   memcpy(scope.key, test_region_key, sizeof(scope.key));
-  const uint8_t seed_hop_count = test_path_byte_len / test_hash_size;
+  const uint8_t seed_hop_count = test_hop_count;
   if (scope.isNull()) {
     sendFloodWithPath(pkt, test_path, seed_hop_count, 0, test_hash_size);
   } else {
@@ -605,6 +606,45 @@ int MyMesh::sendTestGroupText(uint32_t timestamp, const mesh::GroupChannel& chan
     codes[1] = 0;
     // Transport codes select TRANSPORT_FLOOD, still a flood route.
     sendFloodWithPath(pkt, test_path, seed_hop_count, codes, 0, test_hash_size);
+  }
+  est_timeout = calcFloodTimeoutMillisFor(airtime);
+  return MSG_SEND_SENT_FLOOD;
+}
+
+int MyMesh::sendTestAdvert(uint8_t hash_size, uint8_t hop_count, int32_t lat_e6,
+                           int32_t lon_e6, const char* name, const uint8_t* path,
+                           uint32_t& est_timeout) {
+  const size_t name_len = strlen(name);
+  if (hash_size < 1 || hash_size > 3 || hop_count > 62
+      || (uint16_t)hop_count * hash_size > MAX_PATH_SIZE
+      || (hop_count > 0 && path == NULL)
+      || name_len == 0 || name_len > 23) {
+    return MSG_SEND_FAILED;
+  }
+
+  // A fresh random repeater identity for every advert, matching the random
+  // sender keypairs used by the text test sends.
+  mesh::LocalIdentity identity(getRNG());
+
+  uint8_t app_data[MAX_ADVERT_DATA_SIZE];
+  AdvertDataBuilder builder =
+      AdvertDataBuilder::fromE6(ADV_TYPE_REPEATER, name, lat_e6, lon_e6);
+  const uint8_t app_data_len = builder.encodeTo(app_data);
+
+  mesh::Packet* pkt = createAdvert(identity, app_data, app_data_len);
+  if (pkt == NULL) return MSG_SEND_FAILED;
+
+  const uint32_t airtime = _radio->getEstAirtimeFor(pkt->getRawLength());
+
+  TransportKey scope;
+  memcpy(scope.key, test_region_key, sizeof(scope.key));
+  if (scope.isNull()) {
+    sendFloodWithPath(pkt, path, hop_count, 0, hash_size);
+  } else {
+    uint16_t codes[2];
+    codes[0] = scope.calcTransportCode(pkt);
+    codes[1] = 0;
+    sendFloodWithPath(pkt, path, hop_count, codes, 0, hash_size);
   }
   est_timeout = calcFloodTimeoutMillisFor(airtime);
   return MSG_SEND_SENT_FLOOD;
@@ -1004,6 +1044,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   test_mode_enabled = false;
   test_hash_size = 1;
   test_path_byte_len = 0;
+  test_hop_count = 0;
   memset(test_path, 0, sizeof(test_path));
   memset(test_region_key, 0, sizeof(test_region_key));
 #endif
@@ -2151,14 +2192,26 @@ void MyMesh::handleCmdFrame(size_t len) {
         || len < 20 + path_byte_len) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     } else {
-      test_mode_enabled = (enabled != 0);
-      test_hash_size = hash_size;
-      test_path_byte_len = path_byte_len;
-      memcpy(test_region_key, &cmd_frame[4], 16);
-      if (path_byte_len > 0) {
-        memcpy(test_path, &cmd_frame[20], path_byte_len);
+      const uint8_t max_hops = path_byte_len / hash_size;
+      // Optional trailing byte (v17+): number of fake hops to use. Older
+      // hosts omit it, so default to the full configured path.
+      uint8_t hop_count = max_hops;
+      if (len > 20 + path_byte_len) {
+        hop_count = cmd_frame[20 + path_byte_len];
       }
-      writeOKFrame();
+      if (hop_count > max_hops) {
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      } else {
+        test_mode_enabled = (enabled != 0);
+        test_hash_size = hash_size;
+        test_path_byte_len = path_byte_len;
+        test_hop_count = hop_count;
+        memcpy(test_region_key, &cmd_frame[4], 16);
+        if (path_byte_len > 0) {
+          memcpy(test_path, &cmd_frame[20], path_byte_len);
+        }
+        writeOKFrame();
+      }
     }
   } else if (cmd_frame[0] == CMD_TEST_GET_CONFIG) {
     int i = 0;
@@ -2168,6 +2221,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     out_frame[i++] = test_path_byte_len;
     memcpy(&out_frame[i], test_region_key, 16); i += 16;
     memcpy(&out_frame[i], test_path, test_path_byte_len); i += test_path_byte_len;
+    out_frame[i++] = test_hop_count;   // v17+
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_TEST_SEND_TXT && len >= 5) {
     if (!test_mode_enabled) {
@@ -2234,6 +2288,43 @@ void MyMesh::handleCmdFrame(size_t len) {
             memcpy(&out_frame[i], &est_timeout, 4); i += 4;
             _serial->writeFrame(out_frame, i);
           }
+        }
+      }
+    }
+  } else if (cmd_frame[0] == CMD_TEST_SEND_ADVERT && len >= 12) { // V17+
+    if (!test_mode_enabled) {
+      writeErrFrame(ERR_CODE_BAD_STATE);
+    } else {
+      const uint8_t hash_size = cmd_frame[1];
+      const uint8_t hop_count = cmd_frame[2];
+      const uint8_t name_len = cmd_frame[11];
+      const int path_start = 12 + name_len;
+      const int path_len = hop_count * hash_size;
+      if (hash_size < 1 || hash_size > 3 || hop_count > 62
+          || path_len > MAX_PATH_SIZE || name_len == 0 || name_len > 23
+          || len < path_start + path_len) {
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      } else {
+        int32_t lat_e6, lon_e6;
+        memcpy(&lat_e6, &cmd_frame[3], 4);
+        memcpy(&lon_e6, &cmd_frame[7], 4);
+        char name[24];
+        memcpy(name, &cmd_frame[12], name_len);
+        name[name_len] = 0;
+        uint32_t est_timeout;
+        const int result = sendTestAdvert(
+            hash_size, hop_count, lat_e6, lon_e6, name,
+            hop_count > 0 ? &cmd_frame[path_start] : NULL, est_timeout);
+        if (result == MSG_SEND_FAILED) {
+          writeErrFrame(ERR_CODE_TABLE_FULL);
+        } else {
+          int i = 0;
+          out_frame[i++] = RESP_CODE_SENT;
+          out_frame[i++] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
+          const uint32_t expected_ack = 0;
+          memcpy(&out_frame[i], &expected_ack, 4); i += 4;
+          memcpy(&out_frame[i], &est_timeout, 4); i += 4;
+          _serial->writeFrame(out_frame, i);
         }
       }
     }

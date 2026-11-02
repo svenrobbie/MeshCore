@@ -29,6 +29,16 @@ public:
   AdvertDataBuilder(uint8_t adv_type, const char* name, double lat, double lon) : 
       _type(adv_type), _name(name), _has_loc(true), _lat(lat * 1E6), _lon(lon * 1E6)  { }
 
+  /// Build from coordinates already scaled by 1e6, avoiding a double round-trip.
+  static AdvertDataBuilder fromE6(uint8_t adv_type, const char* name,
+                                  int32_t lat_e6, int32_t lon_e6) {
+    AdvertDataBuilder b(adv_type, name);
+    b._has_loc = true;
+    b._lat = lat_e6;
+    b._lon = lon_e6;
+    return b;
+  }
+
   void setFeat1(uint16_t extra) { _extra1 = extra; }
   void setFeat2(uint16_t extra) { _extra2 = extra; }
 

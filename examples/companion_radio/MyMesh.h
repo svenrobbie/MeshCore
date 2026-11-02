@@ -4,7 +4,7 @@
 #include <Mesh.h>
 
 /*------------ Frame Protocol --------------*/
-#define FIRMWARE_VER_CODE 16
+#define FIRMWARE_VER_CODE 17
 
 // Test mode (random sender/receiver, app-supplied path and region) is opt-in per build.
 #ifndef ENABLE_TEST_MODE
@@ -257,6 +257,9 @@ private:
   int sendTestText(uint32_t timestamp, const char* text, uint32_t& est_timeout);
   int sendTestGroupText(uint32_t timestamp, const mesh::GroupChannel& channel,
                         const char* sender_name, const char* text, uint32_t& est_timeout);
+  int sendTestAdvert(uint8_t hash_size, uint8_t hop_count, int32_t lat_e6,
+                     int32_t lon_e6, const char* name, const uint8_t* path,
+                     uint32_t& est_timeout);
 #endif
 
   // helpers, short-cuts
@@ -293,6 +296,7 @@ private:
   bool test_mode_enabled;
   uint8_t test_hash_size;
   uint8_t test_path_byte_len;
+  uint8_t test_hop_count;   // fake hops to prepend, <= test_path_byte_len / test_hash_size
   uint8_t test_path[MAX_PATH_SIZE];
   uint8_t test_region_key[16];
 #endif
